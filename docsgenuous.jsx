@@ -1280,18 +1280,27 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
     if (isEditMode) {
         return (
             <div className="bg-[#0B0F17] p-3 rounded-lg border border-white/10 space-y-3 group hover:border-blue-500/30 transition-colors">
-                <div className="flex flex-wrap gap-2 items-center">
-                    {sentence.parts.map((p, i) => (
-                        <div key={i} className={editItemClass}>
+                <div className="flex flex-wrap items-center">
+                    {sentence.parts.map((p, i) => {
+                        const prevPart = i > 0 ? sentence.parts[i - 1] : null;
+                        const hasPrevContent = prevPart && (
+                            prevPart.type === 'text' ? prevPart.value.trim() : true
+                        );
+                        const isLast = i === sentence.parts.length - 1;
+                        
+                        return (
+                            <React.Fragment key={i}>
+                                {hasPrevContent && <span className="text-gray-500 mx-1"> </span>}
+                                <div className={editItemClass}>
                             {p.type === 'text' ? (
-                                <input className="bg-transparent border-none outline-none text-gray-300 placeholder-gray-600 w-full min-w-[60px]" value={p.value} onChange={e=>{
-                                    // Normalize spaces: collapse multiple spaces to single, but allow user to type normally
-                                    // Only normalize when there are 2+ consecutive spaces
-                                    const normalized = e.target.value.replace(/\s{2,}/g, ' ');
-                                    const n=[...sentence.parts];
-                                    n[i].value=normalized;
-                                    onUpdateParts(n);
-                                }} placeholder="טקסט" />
+                                        <input className="bg-transparent border-none outline-none text-gray-300 placeholder-gray-600 w-full min-w-[60px]" value={p.value} onChange={e=>{
+                                            // Normalize spaces: collapse multiple spaces to single, but allow user to type normally
+                                            // Only normalize when there are 2+ consecutive spaces
+                                            const normalized = e.target.value.replace(/\s{2,}/g, ' ');
+                                            const n=[...sentence.parts];
+                                            n[i].value=normalized;
+                                            onUpdateParts(n);
+                                        }} placeholder="טקסט" />
                             ) : (
                                 <div className="flex items-center gap-2 cursor-pointer w-full" onClick={() => onEditPart(i, p)}>
                                     <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider bg-blue-500/10 px-1.5 py-0.5 rounded">{p.type === 'input' ? 'שדה' : 'בחירה'}</span>
@@ -1301,7 +1310,10 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                             )}
                             <button onClick={()=>onUpdateParts(sentence.parts.filter((_,idx)=>idx!==i))} className="absolute -top-2 -left-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity shadow-lg scale-75 hover:scale-100"><X size={12}/></button>
                         </div>
-                    ))}
+                                {!isLast && <span className="text-gray-500 mx-1"> </span>}
+                            </React.Fragment>
+                        );
+                    })}
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-white/5">
                     <div className="flex items-center gap-2">
@@ -1353,10 +1365,10 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                                 {hasPrevContent && <span> </span>}
                                 <div className={`${viewInputClass} ${p.width || 'w-24'} p-0`} onClick={(e) => e.stopPropagation()} style={{unicodeBidi: 'plaintext'}}>
                                     <input placeholder={p.label} value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="bg-transparent border-none outline-none text-white w-full h-full px-3 placeholder-white/30 font-medium" dir="ltr" />
-                                </div>
+                        </div>
                                 {!isLast && <span> </span>}
                             </React.Fragment>
-                        );
+                    );
                     }
                     if (p.type === 'select') {
                         const options = p.value ? p.value.split(',').map(s => s.trim()) : [];
@@ -1365,8 +1377,8 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                                 {hasPrevContent && <span> </span>}
                                 <div className={`${viewInputClass} min-w-[120px] p-0 relative`} onClick={(e) => e.stopPropagation()} style={{unicodeBidi: 'plaintext'}}>
                                      <select value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="appearance-none bg-transparent border-none outline-none text-white w-full h-full px-3 cursor-pointer" dir="ltr"><option value="" disabled className="bg-[#1A1F2E] text-gray-500">{p.label || 'בחר'}</option>{options.map((o, idx) => <option key={idx} value={o} className="bg-[#1A1F2E] text-white">{o}</option>)}</select>
-                                     <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
-                                </div>
+                                 <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
+                            </div>
                                 {!isLast && <span> </span>}
                             </React.Fragment>
                         );

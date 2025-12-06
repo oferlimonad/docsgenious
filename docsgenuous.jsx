@@ -243,9 +243,9 @@ const LoginPage = ({ onLogin }) => {
       }
       
       // Mock authentication fallback
-      onLogin();
+        onLogin();
     } else {
-      setError('שם משתמש או סיסמה שגויים');
+        setError('שם משתמש או סיסמה שגויים');
     }
     
     setLoading(false);
@@ -323,7 +323,7 @@ const SignupPage = ({ onSignupSuccess }) => {
       if (signUpError) throw signUpError;
       
       if (data.user) {
-        onSignupSuccess();
+    onSignupSuccess();
       }
     } catch (err) {
       setError(err.message || 'שגיאה בהרשמה. נסה שוב.');
@@ -463,18 +463,18 @@ export default function App() {
   }, [data, isAuthenticated, loading]);
 
   const handleLogin = async () => {
-    setIsAuthenticated(true);
-    setToastMsg('התחברת בהצלחה');
+      setIsAuthenticated(true);
+      setToastMsg('התחברת בהצלחה');
     await loadData();
-    navigate('categories');
+      navigate('categories');
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setIsAuthenticated(false);
+      setIsAuthenticated(false);
     setData(INITIAL_DATA);
-    setToastMsg('התנתקת מהמערכת');
-    navigate('home');
+      setToastMsg('התנתקת מהמערכת');
+      navigate('home');
   };
 
   const getSelectedCategory = () => data.find(c => c.id === selectedCategoryId);
@@ -1285,7 +1285,8 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                         <div key={i} className={editItemClass}>
                             {p.type === 'text' ? (
                                 <input className="bg-transparent border-none outline-none text-gray-300 placeholder-gray-600 w-full min-w-[60px]" value={p.value} onChange={e=>{
-                                    // Normalize spaces: collapse multiple spaces to single, but preserve user input
+                                    // Normalize spaces: collapse multiple spaces to single, but allow user to type normally
+                                    // Only normalize when there are 2+ consecutive spaces
                                     const normalized = e.target.value.replace(/\s{2,}/g, ' ');
                                     const n=[...sentence.parts];
                                     n[i].value=normalized;
@@ -1324,33 +1325,46 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
     return (
         <div onClick={onToggle} className={`flex items-center p-3 rounded-xl border transition-all cursor-pointer group ${isSelected ? 'bg-blue-600/10 border-blue-500/50' : 'bg-transparent border-transparent hover:bg-white/5'}`}>
             <div className="pl-3 self-center"><div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-500 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-white/5 border-white/20 group-hover:border-white/40'}`}>{isSelected && <Check size={12} className="text-white" />}</div></div>
-            <div className="flex-1 flex flex-wrap items-center leading-8 text-gray-300 text-base">
+            <div className="flex-1 flex flex-wrap items-center leading-8 text-gray-300 text-base" dir="rtl" style={{unicodeBidi: 'isolate-override'}}>
                 {sentence.parts.map((p, i) => {
                     const key = `${sentence.id}-${i}`;
                     const isLast = i === sentence.parts.length - 1;
+                    const prevPart = i > 0 ? sentence.parts[i - 1] : null;
+                    const hasPrevContent = prevPart && (
+                        prevPart.type === 'text' ? prevPart.value.trim() : true
+                    );
+                    
                     if (p.type === 'text') {
-                        const textValue = p.value.trim();
+                        // Normalize internal spaces to single, but preserve the text content
+                        const textValue = p.value.replace(/\s+/g, ' ').trim();
+                        if (!textValue) return null;
+                        
                         return (
                             <React.Fragment key={i}>
-                                <span className="whitespace-pre-wrap">{textValue}</span>
+                                {hasPrevContent && <span> </span>}
+                                <span className="whitespace-pre-wrap" style={{unicodeBidi: 'plaintext'}}>{textValue}</span>
                                 {!isLast && <span> </span>}
                             </React.Fragment>
                         );
                     }
-                    if (p.type === 'input') return (
-                        <React.Fragment key={i}>
-                            <div className={`${viewInputClass} ${p.width || 'w-24'} p-0`} onClick={(e) => e.stopPropagation()}>
-                                <input placeholder={p.label} value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="bg-transparent border-none outline-none text-white w-full h-full px-3 placeholder-white/30 font-medium" />
-                            </div>
-                            {!isLast && <span> </span>}
-                        </React.Fragment>
-                    );
+                    if (p.type === 'input') {
+                        return (
+                            <React.Fragment key={i}>
+                                {hasPrevContent && <span> </span>}
+                                <div className={`${viewInputClass} ${p.width || 'w-24'} p-0`} onClick={(e) => e.stopPropagation()} style={{unicodeBidi: 'plaintext'}}>
+                                    <input placeholder={p.label} value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="bg-transparent border-none outline-none text-white w-full h-full px-3 placeholder-white/30 font-medium" dir="ltr" />
+                                </div>
+                                {!isLast && <span> </span>}
+                            </React.Fragment>
+                        );
+                    }
                     if (p.type === 'select') {
                         const options = p.value ? p.value.split(',').map(s => s.trim()) : [];
                         return (
                             <React.Fragment key={i}>
-                                <div className={`${viewInputClass} min-w-[120px] p-0 relative`} onClick={(e) => e.stopPropagation()}>
-                                     <select value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="appearance-none bg-transparent border-none outline-none text-white w-full h-full px-3 cursor-pointer"><option value="" disabled className="bg-[#1A1F2E] text-gray-500">{p.label || 'בחר'}</option>{options.map((o, idx) => <option key={idx} value={o} className="bg-[#1A1F2E] text-white">{o}</option>)}</select>
+                                {hasPrevContent && <span> </span>}
+                                <div className={`${viewInputClass} min-w-[120px] p-0 relative`} onClick={(e) => e.stopPropagation()} style={{unicodeBidi: 'plaintext'}}>
+                                     <select value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="appearance-none bg-transparent border-none outline-none text-white w-full h-full px-3 cursor-pointer" dir="ltr"><option value="" disabled className="bg-[#1A1F2E] text-gray-500">{p.label || 'בחר'}</option>{options.map((o, idx) => <option key={idx} value={o} className="bg-[#1A1F2E] text-white">{o}</option>)}</select>
                                      <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
                                 </div>
                                 {!isLast && <span> </span>}
@@ -1377,29 +1391,26 @@ const PreviewContent = ({ subcategory, selectedIds, userValues, onCopy }) => {
                 text += section.title + "\n";
                 // Add selected sentences from this group
                 active.forEach(sen => {
-                    let line = "• ";
+                    let line = "•";
                     sen.parts.forEach((p, i) => {
-                        const isLast = i === sen.parts.length - 1;
+                        const prevPart = i > 0 ? sen.parts[i - 1] : null;
+                        const hasPrevContent = prevPart && (
+                            prevPart.type === 'text' ? prevPart.value.trim() : true
+                        );
+                        
                         if (p.type === 'text') {
-                            const textValue = p.value.trim();
+                            // Remove leading/trailing spaces and normalize internal spaces to single
+                            const textValue = p.value.replace(/\s+/g, ' ').trim();
                             if (textValue) {
-                                line += textValue;
-                                // Add single space after text if not last
-                                if (!isLast) {
-                                    line += " ";
-                                }
+                                line += " " + textValue;
                             }
                         } else {
                             const val = userValues[`${sen.id}-${i}`];
                             const partValue = val ? val : `[${p.label}]`;
-                            line += partValue;
-                            // Add single space after input/select if not last
-                            if (!isLast) {
-                                line += " ";
-                            }
+                            line += " " + partValue;
                         }
                     });
-                    // Normalize multiple spaces to single space
+                    // Ensure exactly one space between all elements (normalize any double spaces)
                     line = line.replace(/\s{2,}/g, ' ');
                     text += line + "\n";
                 });
@@ -1440,21 +1451,30 @@ const PreviewContent = ({ subcategory, selectedIds, userValues, onCopy }) => {
                             {active.map((sen) => {
                                 const parts = [];
                                 sen.parts.forEach((p, i) => {
+                                    const prevPart = i > 0 ? sen.parts[i - 1] : null;
+                                    const hasPrevContent = prevPart && (
+                                        prevPart.type === 'text' ? prevPart.value.trim() : true
+                                    );
                                     const isLast = i === sen.parts.length - 1;
+                                    
                                     if (p.type === 'text') {
-                                        const textValue = p.value.trim();
+                                        // Remove leading/trailing spaces and normalize internal spaces to single
+                                        const textValue = p.value.replace(/\s+/g, ' ').trim();
                                         if (textValue) {
-                                            parts.push(<span key={i}>{textValue}</span>);
-                                            if (!isLast) parts.push(<span key={`space-${i}`}> </span>);
+                                            if (hasPrevContent) parts.push(<span key={`space-before-${i}`}> </span>);
+                                            parts.push(<span key={i} style={{unicodeBidi: 'plaintext'}}>{textValue}</span>);
+                                            if (!isLast) parts.push(<span key={`space-after-${i}`}> </span>);
                                         }
                                     } else {
                                         const val = userValues[`${sen.id}-${i}`];
-                                        parts.push(<span key={i} className="font-medium text-blue-300">{val ? val : `[${p.label}]`}</span>);
-                                        if (!isLast) parts.push(<span key={`space-${i}`}> </span>);
+                                        const partValue = val ? val : `[${p.label}]`;
+                                        if (hasPrevContent) parts.push(<span key={`space-before-${i}`}> </span>);
+                                        parts.push(<span key={i} className="font-medium text-blue-300" style={{unicodeBidi: 'plaintext'}}>{partValue}</span>);
+                                        if (!isLast) parts.push(<span key={`space-after-${i}`}> </span>);
                                     }
                                 });
                                 return (
-                                    <p key={sen.id} className="text-gray-300 leading-relaxed">
+                                    <p key={sen.id} className="text-gray-300 leading-relaxed" dir="rtl" style={{unicodeBidi: 'isolate-override'}}>
                                         • {parts}
                                     </p>
                                 );

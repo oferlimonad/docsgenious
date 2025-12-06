@@ -1286,13 +1286,12 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                         const hasPrevContent = prevPart && (
                             prevPart.type === 'text' ? prevPart.value.trim() : true
                         );
-                        const isLast = i === sentence.parts.length - 1;
                         
                         return (
                             <React.Fragment key={i}>
-                                {hasPrevContent && <span className="text-gray-500 mx-1"> </span>}
+                                {hasPrevContent && <span className="inline-block w-1" aria-hidden="true"> </span>}
                                 <div className={editItemClass}>
-                            {p.type === 'text' ? (
+                                    {p.type === 'text' ? (
                                         <input className="bg-transparent border-none outline-none text-gray-300 placeholder-gray-600 w-full min-w-[60px]" value={p.value} onChange={e=>{
                                             // Normalize spaces: collapse multiple spaces to single, but allow user to type normally
                                             // Only normalize when there are 2+ consecutive spaces
@@ -1301,16 +1300,15 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                                             n[i].value=normalized;
                                             onUpdateParts(n);
                                         }} placeholder="טקסט" />
-                            ) : (
-                                <div className="flex items-center gap-2 cursor-pointer w-full" onClick={() => onEditPart(i, p)}>
-                                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider bg-blue-500/10 px-1.5 py-0.5 rounded">{p.type === 'input' ? 'שדה' : 'בחירה'}</span>
-                                    <span className="text-gray-200 truncate max-w-[100px]">{p.label || 'ללא תווית'}</span>
-                                    <Settings size={12} className="text-gray-500 ml-auto group-hover/item:text-blue-400"/>
+                                    ) : (
+                                        <div className="flex items-center gap-2 cursor-pointer w-full" onClick={() => onEditPart(i, p)}>
+                                            <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider bg-blue-500/10 px-1.5 py-0.5 rounded">{p.type === 'input' ? 'שדה' : 'בחירה'}</span>
+                                            <span className="text-gray-200 truncate max-w-[100px]">{p.label || 'ללא תווית'}</span>
+                                            <Settings size={12} className="text-gray-500 ml-auto group-hover/item:text-blue-400"/>
+                                        </div>
+                                    )}
+                                    <button onClick={()=>onUpdateParts(sentence.parts.filter((_,idx)=>idx!==i))} className="absolute -top-2 -left-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity shadow-lg scale-75 hover:scale-100"><X size={12}/></button>
                                 </div>
-                            )}
-                            <button onClick={()=>onUpdateParts(sentence.parts.filter((_,idx)=>idx!==i))} className="absolute -top-2 -left-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity shadow-lg scale-75 hover:scale-100"><X size={12}/></button>
-                        </div>
-                                {!isLast && <span className="text-gray-500 mx-1"> </span>}
                             </React.Fragment>
                         );
                     })}

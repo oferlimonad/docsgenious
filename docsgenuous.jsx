@@ -9,6 +9,8 @@ import {
   Quote, FileCheck, Layers, Briefcase, Stethoscope, Gavel, UserCheck, Mic, GraduationCap, Store,
   LogOut, User
 } from 'lucide-react';
+import { supabase } from './lib/supabase.js';
+import * as supabaseService from './lib/supabaseService.js';
 
 // --- DATA --- //
 
@@ -212,15 +214,41 @@ const LoginPage = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  // משתמש קבוע - ניתן לשנות כאן
+  const HARDCODED_EMAIL = 'oferlimonad@gmail.com';
+  const HARDCODED_PASSWORD = '0710';
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Mock validation
-    if (email.toLowerCase() === 'oferlimonad@gmail.com' && password === '0710') {
-        onLogin();
+    setError('');
+    setLoading(true);
+    
+    // Mock validation - משתמש קבוע
+    if (email.toLowerCase() === HARDCODED_EMAIL && password === HARDCODED_PASSWORD) {
+      // Try to sign in with Supabase, but if it fails, use mock auth
+      try {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.toLowerCase(),
+          password: password
+        });
+
+        if (!signInError && data.user) {
+          onLogin();
+          return;
+        }
+      } catch (err) {
+        // If Supabase fails, use mock auth
+      }
+      
+      // Mock authentication fallback
+      onLogin();
     } else {
-        setError('שם משתמש או סיסמה שגויים');
+      setError('שם משתמש או סיסמה שגויים');
     }
+    
+    setLoading(false);
   };
 
   return (
@@ -256,7 +284,9 @@ const LoginPage = ({ onLogin }) => {
                 
                 {error && <p className="text-red-400 text-sm text-center bg-red-500/10 py-2 rounded border border-red-500/20">{error}</p>}
 
-                <Button variant="primary" size="lg" type="submit" className="w-full">התחבר למערכת</Button>
+                <Button variant="primary" size="lg" type="submit" className="w-full" disabled={loading}>
+                  {loading ? 'מתחבר...' : 'התחבר למערכת'}
+                </Button>
             </form>
         </Card>
     </div>
@@ -268,19 +298,38 @@ const SignupPage = ({ onSignupSuccess }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+    
     if (password !== confirmPassword) {
         setError('הסיסמאות אינן תואמות');
         return;
     }
-    if (password.length < 4) {
-        setError('סיסמה חייבת להכיל לפחות 4 תווים');
+    if (password.length < 6) {
+        setError('סיסמה חייבת להכיל לפחות 6 תווים');
         return;
     }
-    // Mock success
-    onSignupSuccess();
+    
+    setLoading(true);
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.toLowerCase(),
+        password: password
+      });
+
+      if (signUpError) throw signUpError;
+      
+      if (data.user) {
+        onSignupSuccess();
+      }
+    } catch (err) {
+      setError(err.message || 'שגיאה בהרשמה. נסה שוב.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -327,7 +376,9 @@ const SignupPage = ({ onSignupSuccess }) => {
                 
                 {error && <p className="text-red-400 text-sm text-center bg-red-500/10 py-2 rounded border border-red-500/20">{error}</p>}
 
-                <Button variant="primary" size="lg" type="submit" className="w-full">צור חשבון</Button>
+                <Button variant="primary" size="lg" type="submit" className="w-full" disabled={loading}>
+                  {loading ? 'נרשם...' : 'צור חשבון'}
+                </Button>
             </form>
         </Card>
     </div>
@@ -344,33 +395,86 @@ export default function App() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'auto' }); }, [view]);
 
-  // Auth Check on Load
+  // Auth Check on Load and Listen for Auth Changes
   useEffect(() => {
-      const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
-      setIsAuthenticated(loggedIn);
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsAuthenticated(!!session);
+      setLoading(false);
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+      if (session) {
+        loadData();
+      } else {
+        setData(INITIAL_DATA);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('docsGeniusLinear');
-    if (saved) { try { setData(JSON.parse(saved)); } catch(e) {} }
-  }, []);
-  useEffect(() => { localStorage.setItem('docsGeniusLinear', JSON.stringify(data)); }, [data]);
-
-  const handleLogin = () => {
-      localStorage.setItem('isLoggedIn', 'true');
-      setIsAuthenticated(true);
-      setToastMsg('התחברת בהצלחה');
-      navigate('categories');
+  // Load data from Supabase
+  const loadData = async () => {
+    try {
+      const categories = await supabaseService.loadCategories();
+      if (categories && categories.length > 0) {
+        setData(categories);
+      } else if (categories && categories.length === 0 && data === INITIAL_DATA) {
+        // Keep INITIAL_DATA if user has no data yet
+        // This allows new users to see example data
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setToastMsg('שגיאה בטעינת הנתונים');
+    }
   };
 
-  const handleLogout = () => {
-      localStorage.removeItem('isLoggedIn');
-      setIsAuthenticated(false);
-      setToastMsg('התנתקת מהמערכת');
-      navigate('home');
+  // Load data when authenticated
+  useEffect(() => {
+    if (isAuthenticated && !loading) {
+      loadData();
+    }
+  }, [isAuthenticated, loading]);
+
+  // Save data to Supabase whenever it changes (debounced)
+  // Only save if data is different from INITIAL_DATA and user is authenticated
+  useEffect(() => {
+    if (!isAuthenticated || loading) return;
+    if (data === INITIAL_DATA) return; // Don't save initial data
+    
+    const timeoutId = setTimeout(async () => {
+      try {
+        await supabaseService.saveFullStructure(data);
+      } catch (error) {
+        console.error('Error saving data:', error);
+        setToastMsg('שגיאה בשמירת הנתונים');
+      }
+    }, 1000); // Debounce for 1 second
+
+    return () => clearTimeout(timeoutId);
+  }, [data, isAuthenticated, loading]);
+
+  const handleLogin = async () => {
+    setIsAuthenticated(true);
+    setToastMsg('התחברת בהצלחה');
+    await loadData();
+    navigate('categories');
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsAuthenticated(false);
+    setData(INITIAL_DATA);
+    setToastMsg('התנתקת מהמערכת');
+    navigate('home');
   };
 
   const getSelectedCategory = () => data.find(c => c.id === selectedCategoryId);
@@ -871,10 +975,67 @@ const CategoriesPage = ({ data, setData, onSelect, showToast }) => {
   const [editId, setEditId] = useState(null);
   const [editVal, setEditVal] = useState("");
   const [deleteId, setDeleteId] = useState(null);
-  const addCat = () => { const newCat = { id: `cat-${Date.now()}`, title: 'קטגוריה חדשה', description: 'תיאור קצר', subcategories: [] }; setData(prev => [...prev, newCat]); setEditId(newCat.id); setEditVal(newCat.title); };
-  const handleDeleteConfirm = () => { setData(prev => prev.filter(c => c.id !== deleteId)); setDeleteId(null); showToast('הקטגוריה נמחקה בהצלחה'); };
-  const saveEdit = () => { if(editId) setData(prev => prev.map(c => c.id === editId ? { ...c, title: editVal } : c)); setEditId(null); };
-  const moveCat = (e, index, direction) => { e.stopPropagation(); e.preventDefault(); const newData = [...data]; if (direction === 'up' && index > 0) { [newData[index], newData[index - 1]] = [newData[index - 1], newData[index]]; } else if (direction === 'down' && index < newData.length - 1) { [newData[index], newData[index + 1]] = [newData[index + 1], newData[index]]; } else { return; } setData(newData); };
+  
+  const addCat = async () => {
+    const newCat = { 
+      id: `cat-${Date.now()}`, 
+      title: 'קטגוריה חדשה', 
+      description: 'תיאור קצר', 
+      subcategories: [],
+      display_order: data.length
+    };
+    try {
+      await supabaseService.createCategory(newCat);
+      setData(prev => [...prev, newCat]);
+      setEditId(newCat.id);
+      setEditVal(newCat.title);
+      showToast('קטגוריה נוספה בהצלחה');
+    } catch (error) {
+      showToast('שגיאה בהוספת קטגוריה');
+    }
+  };
+  
+  const handleDeleteConfirm = async () => {
+    try {
+      await supabaseService.deleteCategory(deleteId);
+      setData(prev => prev.filter(c => c.id !== deleteId));
+      setDeleteId(null);
+      showToast('הקטגוריה נמחקה בהצלחה');
+    } catch (error) {
+      showToast('שגיאה במחיקת קטגוריה');
+    }
+  };
+  
+  const saveEdit = async () => {
+    if (editId) {
+      try {
+        await supabaseService.updateCategory(editId, { title: editVal });
+        setData(prev => prev.map(c => c.id === editId ? { ...c, title: editVal } : c));
+        setEditId(null);
+      } catch (error) {
+        showToast('שגיאה בעדכון קטגוריה');
+      }
+    }
+  };
+  
+  const moveCat = async (e, index, direction) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const newData = [...data];
+    if (direction === 'up' && index > 0) {
+      [newData[index], newData[index - 1]] = [newData[index - 1], newData[index]];
+    } else if (direction === 'down' && index < newData.length - 1) {
+      [newData[index], newData[index + 1]] = [newData[index + 1], newData[index]];
+    } else {
+      return;
+    }
+    try {
+      await supabaseService.reorderCategories(newData);
+      setData(newData);
+    } catch (error) {
+      showToast('שגיאה בסידור מחדש');
+    }
+  };
   return (
     <div><ConfirmModal isOpen={!!deleteId} title="מחיקת קטגוריה" message="האם אתה בטוח?" onConfirm={handleDeleteConfirm} onCancel={() => setDeleteId(null)} /><div className="flex justify-between items-center mb-8"><h1 className="text-3xl font-bold text-white tracking-tight">קטגוריות</h1><Button onClick={addCat} icon={Plus}>הוסף חדש</Button></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{data.map((cat, index) => (<Card key={cat.id} onClick={() => onSelect(cat.id)} className="p-6 h-56 flex flex-col justify-between group relative overflow-hidden"><div className="absolute top-0 right-0 p-20 bg-blue-500/10 blur-[60px] rounded-full pointer-events-none group-hover:bg-blue-500/20 transition-all"></div><div className="absolute top-4 left-4 flex gap-2 z-20 md:opacity-0 md:group-hover:opacity-100 transition-opacity"><div className="flex bg-[#0B0F17] border border-white/10 rounded-lg overflow-hidden mr-2"><button type="button" onClick={(e) => moveCat(e, index, 'up')} disabled={index === 0} className="p-1.5 hover:bg-white/10 text-gray-400 disabled:opacity-30 border-l border-white/10"><ArrowUp size={14}/></button><button type="button" onClick={(e) => moveCat(e, index, 'down')} disabled={index === data.length - 1} className="p-1.5 hover:bg-white/10 text-gray-400 disabled:opacity-30"><ArrowDown size={14}/></button></div><button type="button" onClick={(e) => { e.stopPropagation(); setEditId(cat.id); setEditVal(cat.title); }} className="p-2 bg-[#0B0F17] border border-white/10 rounded-lg hover:text-blue-400 text-gray-400 transition-colors"><Edit2 size={16}/></button><button type="button" onClick={(e) => { e.stopPropagation(); setDeleteId(cat.id); }} className="p-2 bg-[#0B0F17] border border-white/10 rounded-lg text-red-400 hover:text-red-500 hover:border-red-500/30 transition-colors"><Trash2 size={16}/></button></div><div className="relative z-10"><div className="w-12 h-12 bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-400 border border-blue-500/30 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300"><Folder size={24} /></div>{editId === cat.id ? <input autoFocus className="w-full text-xl font-bold bg-[#0B0F17] border border-blue-500 rounded px-2 py-1 text-white outline-none" value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={saveEdit} onKeyDown={e => e.key === 'Enter' && saveEdit()} onClick={e=>e.stopPropagation()} /> : <h2 className="text-xl font-bold text-white truncate">{cat.title}</h2>}<p className="text-gray-500 text-sm mt-2">{cat.subcategories.length} תתי נושאים</p></div><div className="flex justify-end relative z-10"><div className="p-2 rounded-full bg-white/5 group-hover:bg-blue-600 group-hover:text-white transition-colors"><ArrowLeft size={16} /></div></div></Card>))}</div></div>
   );
@@ -884,10 +1045,65 @@ const SubcategoriesPage = ({ category, setData, onSelect, showToast }) => {
     const [editId, setEditId] = useState(null);
     const [editVal, setEditVal] = useState("");
     const [deleteId, setDeleteId] = useState(null);
-    const addSub = () => { const newSub = { id: `sub-${Date.now()}`, title: 'נושא חדש', sections: [] }; setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: [...c.subcategories, newSub] } : c)); setEditId(newSub.id); setEditVal(newSub.title); };
-    const handleDeleteConfirm = () => { setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: c.subcategories.filter(s => s.id !== deleteId) } : c)); setDeleteId(null); showToast('התת-קטגוריה נמחקה'); };
-    const saveEdit = () => { if(editId) { setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: c.subcategories.map(s => s.id === editId ? { ...s, title: editVal } : s) } : c)); } setEditId(null); };
-    const moveSub = (e, index, direction) => { e.stopPropagation(); e.preventDefault(); const newSubs = [...category.subcategories]; if (direction === 'up' && index > 0) { [newSubs[index], newSubs[index - 1]] = [newSubs[index - 1], newSubs[index]]; } else if (direction === 'down' && index < newSubs.length - 1) { [newSubs[index], newSubs[index + 1]] = [newSubs[index + 1], newSubs[index]]; } else { return; } setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: newSubs } : c)); };
+    const addSub = async () => {
+      const newSub = { 
+        id: `sub-${Date.now()}`, 
+        title: 'נושא חדש', 
+        sections: [],
+        display_order: category.subcategories.length
+      };
+      try {
+        await supabaseService.createSubcategory(category.id, newSub);
+        setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: [...c.subcategories, newSub] } : c));
+        setEditId(newSub.id);
+        setEditVal(newSub.title);
+        showToast('תת-קטגוריה נוספה בהצלחה');
+      } catch (error) {
+        showToast('שגיאה בהוספת תת-קטגוריה');
+      }
+    };
+    
+    const handleDeleteConfirm = async () => {
+      try {
+        await supabaseService.deleteSubcategory(deleteId);
+        setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: c.subcategories.filter(s => s.id !== deleteId) } : c));
+        setDeleteId(null);
+        showToast('התת-קטגוריה נמחקה');
+      } catch (error) {
+        showToast('שגיאה במחיקת תת-קטגוריה');
+      }
+    };
+    
+    const saveEdit = async () => {
+      if (editId) {
+        try {
+          await supabaseService.updateSubcategory(editId, { title: editVal });
+          setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: c.subcategories.map(s => s.id === editId ? { ...s, title: editVal } : s) } : c));
+          setEditId(null);
+        } catch (error) {
+          showToast('שגיאה בעדכון תת-קטגוריה');
+        }
+      }
+    };
+    
+    const moveSub = async (e, index, direction) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const newSubs = [...category.subcategories];
+      if (direction === 'up' && index > 0) {
+        [newSubs[index], newSubs[index - 1]] = [newSubs[index - 1], newSubs[index]];
+      } else if (direction === 'down' && index < newSubs.length - 1) {
+        [newSubs[index], newSubs[index + 1]] = [newSubs[index + 1], newSubs[index]];
+      } else {
+        return;
+      }
+      try {
+        await supabaseService.reorderSubcategories(newSubs);
+        setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: newSubs } : c));
+      } catch (error) {
+        showToast('שגיאה בסידור מחדש');
+      }
+    };
     return (
         <div><ConfirmModal isOpen={!!deleteId} title="מחיקה" message="למחוק את התת-קטגוריה?" onConfirm={handleDeleteConfirm} onCancel={() => setDeleteId(null)} /><div className="flex justify-between items-center mb-8"><h1 className="text-3xl font-bold text-white tracking-tight">תת קטגוריות</h1><Button onClick={addSub} icon={Plus}>הוסף תת קטגוריה</Button></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{category.subcategories.map((sub, index) => (<Card key={sub.id} onClick={() => onSelect(sub.id)} className="p-5 flex items-center justify-between group relative"><div className="flex items-center gap-4 overflow-hidden"><div className="bg-white/5 border border-white/10 p-3 rounded-lg text-blue-400"><FolderOpen size={20}/></div><div className="min-w-0">{editId === sub.id ? <input autoFocus className="w-full font-bold bg-[#0B0F17] border border-blue-500 rounded px-1 text-white outline-none" value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={saveEdit} onKeyDown={e => e.key === 'Enter' && saveEdit()} onClick={e=>e.stopPropagation()} /> : <h3 className="font-bold text-lg text-gray-200 truncate">{sub.title}</h3>}<span className="text-xs text-gray-500">{(sub.sections || []).length} קבוצות</span></div></div><div className="flex items-center gap-2 z-20 relative"><div className="flex bg-[#0B0F17] border border-white/10 rounded-md overflow-hidden mr-2"><button type="button" onClick={(e) => moveSub(e, index, 'up')} disabled={index === 0} className="p-1 hover:bg-white/10 text-gray-400 disabled:opacity-30 border-l border-white/10"><ArrowUp size={12}/></button><button type="button" onClick={(e) => moveSub(e, index, 'down')} disabled={index === category.subcategories.length - 1} className="p-1 hover:bg-white/10 text-gray-400 disabled:opacity-30"><ArrowDown size={12}/></button></div><button type="button" onClick={(e) => { e.stopPropagation(); setEditId(sub.id); setEditVal(sub.title); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-blue-400 transition-colors"><Edit2 size={16}/></button><button type="button" onClick={(e) => { e.stopPropagation(); setDeleteId(sub.id); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-red-400 transition-colors"><Trash2 size={16}/></button><ArrowLeft size={16} className="text-blue-500 ml-2" /></div></Card>))}</div></div>
     );
@@ -903,12 +1119,92 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
   const [deleteSectionId, setDeleteSectionId] = useState(null);
   const [editingPart, setEditingPart] = useState(null);
   const updateGlobalData = (updatedSubcategory) => { setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: c.subcategories.map(s => s.id === subcategory.id ? updatedSubcategory : s) } : c)); };
-  const addSection = () => { const newSec = { id: `sec-${Date.now()}`, title: 'קבוצה חדשה', sentences: [] }; const updatedSub = { ...subcategory, sections: [...(subcategory.sections || []), newSec] }; updateGlobalData(updatedSub); setEditingSectionId(newSec.id); setEditingSectionTitle(newSec.title); };
-  const handleDeleteSectionConfirm = () => { const updatedSub = { ...subcategory, sections: subcategory.sections.filter(s => s.id !== deleteSectionId) }; updateGlobalData(updatedSub); setDeleteSectionId(null); showToast('הקבוצה נמחקה'); };
-  const updateSectionTitle = (secId, title) => { const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, title } : s) }; updateGlobalData(updatedSub); };
-  const updateSentencesInSection = (secId, newSentences) => { const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, sentences: newSentences } : s) }; updateGlobalData(updatedSub); };
-  const handleUpdatePart = (updatedPart) => { if (!editingPart) return; const { secId, senId, partIndex } = editingPart; const section = subcategory.sections.find(s => s.id === secId); const sentence = section.sentences.find(s => s.id === senId); const newParts = [...sentence.parts]; newParts[partIndex] = updatedPart; const newSentences = section.sentences.map(s => s.id === senId ? { ...s, parts: newParts } : s); updateSentencesInSection(secId, newSentences); setEditingPart(null); };
-  const moveSentence = (secId, senId, direction) => { const section = subcategory.sections.find(s => s.id === secId); if (!section) return; const sentences = [...section.sentences]; const index = sentences.findIndex(s => s.id === senId); if (index === -1) return; if (direction === 'up' && index > 0) { [sentences[index], sentences[index - 1]] = [sentences[index - 1], sentences[index]]; } else if (direction === 'down' && index < sentences.length - 1) { [sentences[index], sentences[index + 1]] = [sentences[index + 1], sentences[index]]; } else return; updateSentencesInSection(secId, sentences); };
+  
+  const addSection = async () => {
+    const newSec = { 
+      id: `sec-${Date.now()}`, 
+      title: 'קבוצה חדשה', 
+      sentences: [],
+      display_order: (subcategory.sections || []).length
+    };
+    try {
+      await supabaseService.createSection(subcategory.id, newSec);
+      const updatedSub = { ...subcategory, sections: [...(subcategory.sections || []), newSec] };
+      updateGlobalData(updatedSub);
+      setEditingSectionId(newSec.id);
+      setEditingSectionTitle(newSec.title);
+      showToast('קבוצה נוספה בהצלחה');
+    } catch (error) {
+      showToast('שגיאה בהוספת קבוצה');
+    }
+  };
+  
+  const handleDeleteSectionConfirm = async () => {
+    try {
+      await supabaseService.deleteSection(deleteSectionId);
+      const updatedSub = { ...subcategory, sections: subcategory.sections.filter(s => s.id !== deleteSectionId) };
+      updateGlobalData(updatedSub);
+      setDeleteSectionId(null);
+      showToast('הקבוצה נמחקה');
+    } catch (error) {
+      showToast('שגיאה במחיקת קבוצה');
+    }
+  };
+  
+  const updateSectionTitle = async (secId, title) => {
+    try {
+      await supabaseService.updateSection(secId, { title });
+      const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, title } : s) };
+      updateGlobalData(updatedSub);
+    } catch (error) {
+      showToast('שגיאה בעדכון קבוצה');
+    }
+  };
+  
+  const updateSentencesInSection = async (secId, newSentences) => {
+    try {
+      // Update all sentences in the section
+      for (let i = 0; i < newSentences.length; i++) {
+        const sen = newSentences[i];
+        await supabaseService.updateSentence(sen.id, { ...sen, display_order: i });
+      }
+      const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, sentences: newSentences } : s) };
+      updateGlobalData(updatedSub);
+    } catch (error) {
+      showToast('שגיאה בעדכון משפטים');
+    }
+  };
+  
+  const handleUpdatePart = async (updatedPart) => {
+    if (!editingPart) return;
+    const { secId, senId, partIndex } = editingPart;
+    const section = subcategory.sections.find(s => s.id === secId);
+    const sentence = section.sentences.find(s => s.id === senId);
+    const newParts = [...sentence.parts];
+    newParts[partIndex] = updatedPart;
+    const newSentences = section.sentences.map(s => s.id === senId ? { ...s, parts: newParts } : s);
+    await updateSentencesInSection(secId, newSentences);
+    setEditingPart(null);
+  };
+  
+  const moveSentence = async (secId, senId, direction) => {
+    const section = subcategory.sections.find(s => s.id === secId);
+    if (!section) return;
+    const sentences = [...section.sentences];
+    const index = sentences.findIndex(s => s.id === senId);
+    if (index === -1) return;
+    if (direction === 'up' && index > 0) {
+      [sentences[index], sentences[index - 1]] = [sentences[index - 1], sentences[index]];
+    } else if (direction === 'down' && index < sentences.length - 1) {
+      [sentences[index], sentences[index + 1]] = [sentences[index + 1], sentences[index]];
+    } else return;
+    try {
+      await supabaseService.reorderSentences(secId, sentences);
+      updateSentencesInSection(secId, sentences);
+    } catch (error) {
+      showToast('שגיאה בסידור מחדש');
+    }
+  };
   const handleCopy = (text) => { navigator.clipboard.writeText(text); showToast('הטקסט הועתק ללוח!'); };
   return (
     <div className="flex flex-col h-full">
@@ -928,9 +1224,37 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
                             </div>
                             <div className="p-3 space-y-2">
                                 {section.sentences.map((sen, index) => (
-                                    <SentenceRow key={sen.id} sentence={sen} index={index} totalCount={section.sentences.length} isEditMode={isEditMode} isSelected={selectedSentences.has(sen.id)} onToggle={() => { const next = new Set(selectedSentences); next.has(sen.id) ? next.delete(sen.id) : next.add(sen.id); setSelectedSentences(next); }} userValues={userValues} onValueChange={(k, v) => setUserValues(prev => ({ ...prev, [k]: v }))} onUpdateParts={(parts) => { const newSens = section.sentences.map(s => s.id === sen.id ? { ...s, parts } : s); updateSentencesInSection(section.id, newSens); }} onDelete={() => { const newSens = section.sentences.filter(s => s.id !== sen.id); updateSentencesInSection(section.id, newSens); const next = new Set(selectedSentences); next.delete(sen.id); setSelectedSentences(next); }} onMove={(dir) => moveSentence(section.id, sen.id, dir)} onEditPart={(partIndex, partData) => setEditingPart({ secId: section.id, senId: sen.id, partIndex, partData })} />
+                                    <SentenceRow key={sen.id} sentence={sen} index={index} totalCount={section.sentences.length} isEditMode={isEditMode} isSelected={selectedSentences.has(sen.id)} onToggle={() => { const next = new Set(selectedSentences); next.has(sen.id) ? next.delete(sen.id) : next.add(sen.id); setSelectedSentences(next); }} userValues={userValues} onValueChange={(k, v) => setUserValues(prev => ({ ...prev, [k]: v }))} onUpdateParts={async (parts) => { 
+                                      const updatedSentence = { ...sen, parts };
+                                      try {
+                                        await supabaseService.updateSentence(sen.id, updatedSentence);
+                                        const newSens = section.sentences.map(s => s.id === sen.id ? updatedSentence : s);
+                                        await updateSentencesInSection(section.id, newSens);
+                                      } catch (error) {
+                                        showToast('שגיאה בעדכון משפט');
+                                      }
+                                    }} onDelete={async () => { 
+                                      try {
+                                        await supabaseService.deleteSentence(sen.id);
+                                        const newSens = section.sentences.filter(s => s.id !== sen.id);
+                                        await updateSentencesInSection(section.id, newSens);
+                                        const next = new Set(selectedSentences);
+                                        next.delete(sen.id);
+                                        setSelectedSentences(next);
+                                      } catch (error) {
+                                        showToast('שגיאה במחיקת משפט');
+                                      }
+                                    }} onMove={(dir) => moveSentence(section.id, sen.id, dir)} onEditPart={(partIndex, partData) => setEditingPart({ secId: section.id, senId: sen.id, partIndex, partData })} />
                                 ))}
-                                {isEditMode && <Button variant="secondary" size="sm" className="w-full mt-2 border-dashed border-white/20 text-gray-400 hover:text-white hover:border-white/40" onClick={() => updateSentencesInSection(section.id, [...section.sentences, { id: `sen-${Date.now()}`, parts: [{ type: 'text', value: '' }] }])}><Plus size={14} /> הוסף משפט</Button>}
+                                {isEditMode && <Button variant="secondary" size="sm" className="w-full mt-2 border-dashed border-white/20 text-gray-400 hover:text-white hover:border-white/40" onClick={async () => {
+                                  const newSentence = { id: `sen-${Date.now()}`, parts: [{ type: 'text', value: '' }], display_order: section.sentences.length };
+                                  try {
+                                    await supabaseService.createSentence(section.id, newSentence);
+                                    await updateSentencesInSection(section.id, [...section.sentences, newSentence]);
+                                  } catch (error) {
+                                    showToast('שגיאה בהוספת משפט');
+                                  }
+                                }}><Plus size={14} /> הוסף משפט</Button>}
                             </div>
                         </div>
                     ))}

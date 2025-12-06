@@ -217,7 +217,7 @@ const LoginPage = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
 
   // משתמש קבוע - ניתן לשנות כאן
-  const HARDCODED_EMAIL = 'oferlimonad@gmail.com';
+  const HARDCODED_EMAIL = 'limonad.dr@gmail.com';
   const HARDCODED_PASSWORD = '0710';
 
   const handleSubmit = async (e) => {
@@ -1284,7 +1284,13 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                     {sentence.parts.map((p, i) => (
                         <div key={i} className={editItemClass}>
                             {p.type === 'text' ? (
-                                <input className="bg-transparent border-none outline-none text-gray-300 placeholder-gray-600 w-full min-w-[60px]" value={p.value} onChange={e=>{const n=[...sentence.parts];n[i].value=e.target.value;onUpdateParts(n)}} placeholder="טקסט" />
+                                <input className="bg-transparent border-none outline-none text-gray-300 placeholder-gray-600 w-full min-w-[60px]" value={p.value} onChange={e=>{
+                                    // Normalize spaces: collapse multiple spaces to single, but preserve user input
+                                    const normalized = e.target.value.replace(/\s{2,}/g, ' ');
+                                    const n=[...sentence.parts];
+                                    n[i].value=normalized;
+                                    onUpdateParts(n);
+                                }} placeholder="טקסט" />
                             ) : (
                                 <div className="flex items-center gap-2 cursor-pointer w-full" onClick={() => onEditPart(i, p)}>
                                     <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider bg-blue-500/10 px-1.5 py-0.5 rounded">{p.type === 'input' ? 'שדה' : 'בחירה'}</span>
@@ -1316,24 +1322,39 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
     }
 
     return (
-        <div onClick={onToggle} className={`flex items-start p-3 rounded-xl border transition-all cursor-pointer group ${isSelected ? 'bg-blue-600/10 border-blue-500/50' : 'bg-transparent border-transparent hover:bg-white/5'}`}>
-            <div className="pt-2 pl-3"><div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-500 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-white/5 border-white/20 group-hover:border-white/40'}`}>{isSelected && <Check size={12} className="text-white" />}</div></div>
-            <div className="flex-1 flex flex-wrap items-center gap-2 leading-8 text-gray-300 text-base py-1">
+        <div onClick={onToggle} className={`flex items-center p-3 rounded-xl border transition-all cursor-pointer group ${isSelected ? 'bg-blue-600/10 border-blue-500/50' : 'bg-transparent border-transparent hover:bg-white/5'}`}>
+            <div className="pl-3 self-center"><div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-500 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-white/5 border-white/20 group-hover:border-white/40'}`}>{isSelected && <Check size={12} className="text-white" />}</div></div>
+            <div className="flex-1 flex flex-wrap items-center leading-8 text-gray-300 text-base">
                 {sentence.parts.map((p, i) => {
                     const key = `${sentence.id}-${i}`;
-                    if (p.type === 'text') return <span key={i} className="whitespace-pre-wrap py-1">{p.value}</span>;
+                    const isLast = i === sentence.parts.length - 1;
+                    if (p.type === 'text') {
+                        const textValue = p.value.trim();
+                        return (
+                            <React.Fragment key={i}>
+                                <span className="whitespace-pre-wrap">{textValue}</span>
+                                {!isLast && <span> </span>}
+                            </React.Fragment>
+                        );
+                    }
                     if (p.type === 'input') return (
-                        <div key={i} className={`${viewInputClass} ${p.width || 'w-24'} p-0`} onClick={(e) => e.stopPropagation()}>
-                            <input placeholder={p.label} value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="bg-transparent border-none outline-none text-white w-full h-full px-3 placeholder-white/30 font-medium" />
-                        </div>
+                        <React.Fragment key={i}>
+                            <div className={`${viewInputClass} ${p.width || 'w-24'} p-0`} onClick={(e) => e.stopPropagation()}>
+                                <input placeholder={p.label} value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="bg-transparent border-none outline-none text-white w-full h-full px-3 placeholder-white/30 font-medium" />
+                            </div>
+                            {!isLast && <span> </span>}
+                        </React.Fragment>
                     );
                     if (p.type === 'select') {
                         const options = p.value ? p.value.split(',').map(s => s.trim()) : [];
                         return (
-                            <div key={i} className={`${viewInputClass} min-w-[120px] p-0 relative`} onClick={(e) => e.stopPropagation()}>
-                                 <select value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="appearance-none bg-transparent border-none outline-none text-white w-full h-full px-3 cursor-pointer"><option value="" disabled className="bg-[#1A1F2E] text-gray-500">{p.label || 'בחר'}</option>{options.map((o, idx) => <option key={idx} value={o} className="bg-[#1A1F2E] text-white">{o}</option>)}</select>
-                                 <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
-                            </div>
+                            <React.Fragment key={i}>
+                                <div className={`${viewInputClass} min-w-[120px] p-0 relative`} onClick={(e) => e.stopPropagation()}>
+                                     <select value={userValues[key] || ''} onChange={(e) => onValueChange(key, e.target.value)} className="appearance-none bg-transparent border-none outline-none text-white w-full h-full px-3 cursor-pointer"><option value="" disabled className="bg-[#1A1F2E] text-gray-500">{p.label || 'בחר'}</option>{options.map((o, idx) => <option key={idx} value={o} className="bg-[#1A1F2E] text-white">{o}</option>)}</select>
+                                     <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
+                                </div>
+                                {!isLast && <span> </span>}
+                            </React.Fragment>
                         );
                     }
                     return null;
@@ -1358,12 +1379,28 @@ const PreviewContent = ({ subcategory, selectedIds, userValues, onCopy }) => {
                 active.forEach(sen => {
                     let line = "• ";
                     sen.parts.forEach((p, i) => {
-                        if (p.type === 'text') line += p.value;
-                        else {
+                        const isLast = i === sen.parts.length - 1;
+                        if (p.type === 'text') {
+                            const textValue = p.value.trim();
+                            if (textValue) {
+                                line += textValue;
+                                // Add single space after text if not last
+                                if (!isLast) {
+                                    line += " ";
+                                }
+                            }
+                        } else {
                             const val = userValues[`${sen.id}-${i}`];
-                            line += val ? val : `[${p.label}]`;
+                            const partValue = val ? val : `[${p.label}]`;
+                            line += partValue;
+                            // Add single space after input/select if not last
+                            if (!isLast) {
+                                line += " ";
+                            }
                         }
                     });
+                    // Normalize multiple spaces to single space
+                    line = line.replace(/\s{2,}/g, ' ');
                     text += line + "\n";
                 });
                 text += "\n"; // Add spacing between groups
@@ -1401,17 +1438,24 @@ const PreviewContent = ({ subcategory, selectedIds, userValues, onCopy }) => {
                             </h4>
                             {/* Selected sentences from this group */}
                             {active.map((sen) => {
-                                let line = "• ";
+                                const parts = [];
                                 sen.parts.forEach((p, i) => {
-                                    if (p.type === 'text') line += p.value;
-                                    else {
+                                    const isLast = i === sen.parts.length - 1;
+                                    if (p.type === 'text') {
+                                        const textValue = p.value.trim();
+                                        if (textValue) {
+                                            parts.push(<span key={i}>{textValue}</span>);
+                                            if (!isLast) parts.push(<span key={`space-${i}`}> </span>);
+                                        }
+                                    } else {
                                         const val = userValues[`${sen.id}-${i}`];
-                                        line += val ? val : `[${p.label}]`;
+                                        parts.push(<span key={i} className="font-medium text-blue-300">{val ? val : `[${p.label}]`}</span>);
+                                        if (!isLast) parts.push(<span key={`space-${i}`}> </span>);
                                     }
                                 });
                                 return (
                                     <p key={sen.id} className="text-gray-300 leading-relaxed">
-                                        {line}
+                                        • {parts}
                                     </p>
                                 );
                             })}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Plus, Trash2, Edit2, Check, Copy, Settings, 
   ChevronDown, ChevronUp, Save, LayoutTemplate, 
@@ -1211,37 +1211,45 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
     }, 700); // 700ms debounce
   };
   
-  const addSection = async () => {
+  const addSection = () => {
     const newSec = { 
       id: `sec-${Date.now()}`, 
       title: 'קבוצה חדשה', 
       sentences: [],
       display_order: (subcategory.sections || []).length
     };
-    try {
-      await supabaseService.createSection(subcategory.id, newSec);
-    } catch (error) {
-      // Silently fail if Supabase is not available - continue with local create
-      console.warn('Supabase create failed, continuing with local state:', error);
-    }
+    // Update UI immediately
     const updatedSub = { ...subcategory, sections: [...(subcategory.sections || []), newSec] };
     updateGlobalData(updatedSub);
     setEditingSectionId(newSec.id);
     setEditingSectionTitle(newSec.title);
     showToast('קבוצה נוספה בהצלחה');
+    
+    // Save to Supabase in background (non-blocking)
+    (async () => {
+      try {
+        await supabaseService.createSection(subcategory.id, newSec);
+      } catch (error) {
+        console.warn('Supabase create failed, continuing with local state:', error);
+      }
+    })();
   };
   
-  const handleDeleteSectionConfirm = async () => {
-    try {
-      await supabaseService.deleteSection(deleteSectionId);
-    } catch (error) {
-      // Silently fail if Supabase is not available - continue with local delete
-      console.warn('Supabase delete failed, continuing with local state:', error);
-    }
+  const handleDeleteSectionConfirm = () => {
+    // Update UI immediately
     const updatedSub = { ...subcategory, sections: subcategory.sections.filter(s => s.id !== deleteSectionId) };
     updateGlobalData(updatedSub);
     setDeleteSectionId(null);
     showToast('הקבוצה נמחקה');
+    
+    // Save to Supabase in background (non-blocking)
+    (async () => {
+      try {
+        await supabaseService.deleteSection(deleteSectionId);
+      } catch (error) {
+        console.warn('Supabase delete failed, continuing with local state:', error);
+      }
+    })();
   };
   
   const updateSectionTitle = (secId, title) => {
@@ -1319,7 +1327,7 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
     setEditingPart(null);
   };
   
-  const moveSentence = async (secId, senId, direction) => {
+  const moveSentence = (secId, senId, direction) => {
     const section = subcategory.sections.find(s => s.id === secId);
     if (!section) return;
     const sentences = [...section.sentences];
@@ -1330,14 +1338,18 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
     } else if (direction === 'down' && index < sentences.length - 1) {
       [sentences[index], sentences[index + 1]] = [sentences[index + 1], sentences[index]];
     } else return;
-    try {
-      await supabaseService.reorderSentences(secId, sentences);
-    } catch (error) {
-      // Silently fail if Supabase is not available - continue with local reorder
-      console.warn('Supabase reorder failed, continuing with local state:', error);
-    }
-    // Immediate save for reordering (structural change)
+    
+    // Update UI immediately
     updateSentencesInSection(secId, sentences, true);
+    
+    // Save to Supabase in background (non-blocking)
+    (async () => {
+      try {
+        await supabaseService.reorderSentences(secId, sentences);
+      } catch (error) {
+        console.warn('Supabase reorder failed, continuing with local state:', error);
+      }
+    })();
   };
   const handleCopy = (text) => { navigator.clipboard.writeText(text); showToast('הטקסט הועתק ללוח!'); };
   return (
@@ -1383,29 +1395,37 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
                                       
                                       // Debounced save to Supabase
                                       debouncedSave(sen.id, updatedSentence);
-                                    }} onDelete={async () => { 
-                                      try {
-                                        await supabaseService.deleteSentence(sen.id);
-                                      } catch (error) {
-                                        // Silently fail if Supabase is not available - continue with local delete
-                                        console.warn('Supabase delete failed, continuing with local state:', error);
-                                      }
+                                    }} onDelete={() => { 
+                                      // Update UI immediately
                                       const newSens = section.sentences.filter(s => s.id !== sen.id);
                                       updateSentencesInSection(section.id, newSens);
                                       const next = new Set(selectedSentences);
                                       next.delete(sen.id);
                                       setSelectedSentences(next);
+                                      
+                                      // Save to Supabase in background (non-blocking)
+                                      (async () => {
+                                        try {
+                                          await supabaseService.deleteSentence(sen.id);
+                                        } catch (error) {
+                                          console.warn('Supabase delete failed, continuing with local state:', error);
+                                        }
+                                      })();
                                     }} onMove={(dir) => moveSentence(section.id, sen.id, dir)} onEditPart={(partIndex, partData) => setEditingPart({ secId: section.id, senId: sen.id, partIndex, partData })} />
                                 ))}
-                                {isEditMode && <Button variant="secondary" size="sm" className="w-full mt-2 border-dashed border-white/20 text-gray-400 hover:text-white hover:border-white/40" onClick={async () => {
+                                {isEditMode && <Button variant="secondary" size="sm" className="w-full mt-2 border-dashed border-white/20 text-gray-400 hover:text-white hover:border-white/40" onClick={() => {
                                   const newSentence = { id: `sen-${Date.now()}`, parts: [{ type: 'text', value: '' }], display_order: section.sentences.length };
-                                  try {
-                                    await supabaseService.createSentence(section.id, newSentence);
-                                  } catch (error) {
-                                    // Silently fail if Supabase is not available - continue with local create
-                                    console.warn('Supabase create failed, continuing with local state:', error);
-                                  }
+                                  // Update UI immediately
                                   updateSentencesInSection(section.id, [...section.sentences, newSentence]);
+                                  
+                                  // Save to Supabase in background (non-blocking)
+                                  (async () => {
+                                    try {
+                                      await supabaseService.createSentence(section.id, newSentence);
+                                    } catch (error) {
+                                      console.warn('Supabase create failed, continuing with local state:', error);
+                                    }
+                                  })();
                                 }}><Plus size={14} /> הוסף משפט</Button>}
                             </div>
                         </div>
@@ -1424,7 +1444,8 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
 };
 
 // --- Sentence Row (Dark Mode) --- //
-const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onToggle, userValues, onValueChange, onUpdateParts, onDelete, onMove, onEditPart }) => {
+// Memoized SentenceRow to prevent unnecessary re-renders
+const SentenceRow = React.memo(({ sentence, index, totalCount, isEditMode, isSelected, onToggle, userValues, onValueChange, onUpdateParts, onDelete, onMove, onEditPart }) => {
     const itemBaseClass = "flex items-center h-10 px-3 rounded border transition-all text-sm";
     const editItemClass = `${itemBaseClass} bg-white/5 border-white/10 hover:border-blue-500/50 relative group/item`;
     const viewInputClass = `${itemBaseClass} bg-[#0B0F17] border-white/20 focus-within:border-blue-500 focus-within:bg-blue-900/10`;
@@ -1538,9 +1559,28 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
             </div>
         </div>
     );
-};
+}, (prevProps, nextProps) => {
+    // Custom comparison to prevent re-renders when only unrelated props change
+    // Only re-render if sentence data, edit mode, selection, or position changed
+    if (prevProps.sentence.id !== nextProps.sentence.id) return false;
+    if (prevProps.sentence.parts.length !== nextProps.sentence.parts.length) return false;
+    if (prevProps.sentence.parts.some((p, i) => {
+        const nextPart = nextProps.sentence.parts[i];
+        return !nextPart || p.type !== nextPart.type || p.value !== nextPart.value || p.label !== nextPart.label;
+    })) return false;
+    if (prevProps.isEditMode !== nextProps.isEditMode) return false;
+    if (prevProps.isSelected !== nextProps.isSelected) return false;
+    if (prevProps.index !== nextProps.index) return false;
+    if (prevProps.totalCount !== nextProps.totalCount) return false;
+    // Check if userValues for this sentence changed
+    const sentenceId = prevProps.sentence.id;
+    const prevUserVals = Object.keys(prevProps.userValues || {}).filter(k => k.startsWith(sentenceId)).map(k => prevProps.userValues[k]).join('|');
+    const nextUserVals = Object.keys(nextProps.userValues || {}).filter(k => k.startsWith(sentenceId)).map(k => nextProps.userValues[k]).join('|');
+    if (prevUserVals !== nextUserVals) return false;
+    return true; // Props are equal, skip re-render
+});
 
-const PreviewContent = ({ subcategory, selectedIds, userValues, onCopy }) => {
+const PreviewContent = React.memo(({ subcategory, selectedIds, userValues, onCopy }) => {
     const [copied, setCopied] = useState(false);
     
     // Generate text for clipboard (with group titles)
@@ -1673,7 +1713,15 @@ const PreviewContent = ({ subcategory, selectedIds, userValues, onCopy }) => {
             </div>
         </>
     );
-};
+}, (prevProps, nextProps) => {
+    // Custom comparison to prevent re-renders when only unrelated props change
+    return (
+        prevProps.selectedIds.size === nextProps.selectedIds.size &&
+        JSON.stringify(prevProps.selectedIds) === JSON.stringify(nextProps.selectedIds) &&
+        JSON.stringify(prevProps.userValues) === JSON.stringify(nextProps.userValues) &&
+        prevProps.subcategory.id === nextProps.subcategory.id
+    );
+});
 
 const Breadcrumbs = ({ view, subcategory, onHome, onCategories, onSubcategories }) => (
     <nav className="mb-6 flex items-center text-sm text-gray-400 overflow-x-auto whitespace-nowrap pb-2 no-scrollbar"><span onClick={onHome} className="cursor-pointer hover:text-white transition-colors">בית</span><span className="mx-2 text-white/20">/</span><span onClick={onCategories} className={`cursor-pointer hover:text-white transition-colors ${view === 'categories' ? 'font-bold text-white' : ''}`}>תבניות</span>{(view === 'subcategories' || view === 'builder') && <><span className="mx-2 text-white/20">/</span><span onClick={view === 'builder' ? onSubcategories : undefined} className={`cursor-pointer hover:text-white transition-colors ${view === 'subcategories' ? 'font-bold text-white' : ''}`}>תת קטגוריות</span></>}{view === 'builder' && subcategory && <><span className="mx-2 text-white/20">/</span><span className="font-bold text-blue-400">{subcategory.title}</span></>}</nav>

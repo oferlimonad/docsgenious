@@ -217,7 +217,7 @@ const LoginPage = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
 
   // משתמש קבוע - ניתן לשנות כאן
-  const HARDCODED_EMAIL = 'limonad.dr@gmail.com';
+  const HARDCODED_EMAIL = 'oferlimonad@gmail.com';
   const HARDCODED_PASSWORD = '0710';
 
   const handleSubmit = async (e) => {
@@ -427,13 +427,21 @@ export default function App() {
       const categories = await supabaseService.loadCategories();
       if (categories && categories.length > 0) {
         setData(categories);
-      } else if (categories && categories.length === 0 && data === INITIAL_DATA) {
-        // Keep INITIAL_DATA if user has no data yet
-        // This allows new users to see example data
+      } else {
+        // If no data from Supabase, keep INITIAL_DATA or current local data
+        // This allows the app to work in local-only mode
+        if (data === INITIAL_DATA || !data || data.length === 0) {
+          // Keep INITIAL_DATA for new users or when no data exists
+          setData(INITIAL_DATA);
+        }
+        // Otherwise, keep the current local data (user has been working locally)
       }
     } catch (error) {
-      console.error('Error loading data:', error);
-      setToastMsg('שגיאה בטעינת הנתונים');
+      console.warn('Error loading data from Supabase, continuing with local data:', error);
+      // Don't show error to user - just continue with local data
+      if (data === INITIAL_DATA || !data || data.length === 0) {
+        setData(INITIAL_DATA);
+      }
     }
   };
 
@@ -454,8 +462,9 @@ export default function App() {
       try {
         await supabaseService.saveFullStructure(data);
       } catch (error) {
-        console.error('Error saving data:', error);
-        setToastMsg('שגיאה בשמירת הנתונים');
+        // Silently fail if Supabase is not available or user not authenticated
+        // Only log to console, don't show error to user
+        console.warn('Supabase save failed, continuing with local state:', error);
       }
     }, 1000); // Debounce for 1 second
 
@@ -1129,36 +1138,39 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
     };
     try {
       await supabaseService.createSection(subcategory.id, newSec);
-      const updatedSub = { ...subcategory, sections: [...(subcategory.sections || []), newSec] };
-      updateGlobalData(updatedSub);
-      setEditingSectionId(newSec.id);
-      setEditingSectionTitle(newSec.title);
-      showToast('קבוצה נוספה בהצלחה');
     } catch (error) {
-      showToast('שגיאה בהוספת קבוצה');
+      // Silently fail if Supabase is not available - continue with local create
+      console.warn('Supabase create failed, continuing with local state:', error);
     }
+    const updatedSub = { ...subcategory, sections: [...(subcategory.sections || []), newSec] };
+    updateGlobalData(updatedSub);
+    setEditingSectionId(newSec.id);
+    setEditingSectionTitle(newSec.title);
+    showToast('קבוצה נוספה בהצלחה');
   };
   
   const handleDeleteSectionConfirm = async () => {
     try {
       await supabaseService.deleteSection(deleteSectionId);
-      const updatedSub = { ...subcategory, sections: subcategory.sections.filter(s => s.id !== deleteSectionId) };
-      updateGlobalData(updatedSub);
-      setDeleteSectionId(null);
-      showToast('הקבוצה נמחקה');
     } catch (error) {
-      showToast('שגיאה במחיקת קבוצה');
+      // Silently fail if Supabase is not available - continue with local delete
+      console.warn('Supabase delete failed, continuing with local state:', error);
     }
+    const updatedSub = { ...subcategory, sections: subcategory.sections.filter(s => s.id !== deleteSectionId) };
+    updateGlobalData(updatedSub);
+    setDeleteSectionId(null);
+    showToast('הקבוצה נמחקה');
   };
   
   const updateSectionTitle = async (secId, title) => {
     try {
       await supabaseService.updateSection(secId, { title });
-      const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, title } : s) };
-      updateGlobalData(updatedSub);
     } catch (error) {
-      showToast('שגיאה בעדכון קבוצה');
+      // Silently fail if Supabase is not available - continue with local update
+      console.warn('Supabase update failed, continuing with local state:', error);
     }
+    const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, title } : s) };
+    updateGlobalData(updatedSub);
   };
   
   const updateSentencesInSection = async (secId, newSentences) => {
@@ -1166,12 +1178,20 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
       // Update all sentences in the section
       for (let i = 0; i < newSentences.length; i++) {
         const sen = newSentences[i];
-        await supabaseService.updateSentence(sen.id, { ...sen, display_order: i });
+        try {
+          await supabaseService.updateSentence(sen.id, { ...sen, display_order: i });
+        } catch (error) {
+          // Silently fail if Supabase is not available - continue with local update
+          console.warn('Supabase update failed for sentence, continuing with local state:', error);
+        }
       }
       const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, sentences: newSentences } : s) };
       updateGlobalData(updatedSub);
     } catch (error) {
-      showToast('שגיאה בעדכון משפטים');
+      console.error('Error updating sentences in section:', error);
+      // Still update local state even if Supabase fails
+      const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, sentences: newSentences } : s) };
+      updateGlobalData(updatedSub);
     }
   };
   
@@ -1200,10 +1220,11 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
     } else return;
     try {
       await supabaseService.reorderSentences(secId, sentences);
-      updateSentencesInSection(secId, sentences);
     } catch (error) {
-      showToast('שגיאה בסידור מחדש');
+      // Silently fail if Supabase is not available - continue with local reorder
+      console.warn('Supabase reorder failed, continuing with local state:', error);
     }
+    updateSentencesInSection(secId, sentences);
   };
   const handleCopy = (text) => { navigator.clipboard.writeText(text); showToast('הטקסט הועתק ללוח!'); };
   return (
@@ -1224,36 +1245,39 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
                             </div>
                             <div className="p-3 space-y-2">
                                 {section.sentences.map((sen, index) => (
-                                    <SentenceRow key={sen.id} sentence={sen} index={index} totalCount={section.sentences.length} isEditMode={isEditMode} isSelected={selectedSentences.has(sen.id)} onToggle={() => { const next = new Set(selectedSentences); next.has(sen.id) ? next.delete(sen.id) : next.add(sen.id); setSelectedSentences(next); }} userValues={userValues} onValueChange={(k, v) => setUserValues(prev => ({ ...prev, [k]: v }))} onUpdateParts={async (parts) => { 
+                                    <SentenceRow key={sen.id} sentence={sen} index={index} totalCount={section.sentences.length} isEditMode={isEditMode} isSelected={selectedSentences.has(sen.id)} onToggle={() => { const next = new Set(selectedSentences); next.has(sen.id) ? next.delete(sen.id) : next.add(sen.id); setSelectedSentences(next); }} userValues={userValues} onValueChange={(k, v) => setUserValues(prev => ({ ...prev, [k]: v }))}                                     onUpdateParts={async (parts) => { 
                                       const updatedSentence = { ...sen, parts };
                                       try {
                                         await supabaseService.updateSentence(sen.id, updatedSentence);
-                                        const newSens = section.sentences.map(s => s.id === sen.id ? updatedSentence : s);
-                                        await updateSentencesInSection(section.id, newSens);
                                       } catch (error) {
-                                        showToast('שגיאה בעדכון משפט');
+                                        // Silently fail if Supabase is not available - continue with local update
+                                        console.warn('Supabase update failed, continuing with local state:', error);
                                       }
+                                      const newSens = section.sentences.map(s => s.id === sen.id ? updatedSentence : s);
+                                      await updateSentencesInSection(section.id, newSens);
                                     }} onDelete={async () => { 
                                       try {
                                         await supabaseService.deleteSentence(sen.id);
-                                        const newSens = section.sentences.filter(s => s.id !== sen.id);
-                                        await updateSentencesInSection(section.id, newSens);
-                                        const next = new Set(selectedSentences);
-                                        next.delete(sen.id);
-                                        setSelectedSentences(next);
                                       } catch (error) {
-                                        showToast('שגיאה במחיקת משפט');
+                                        // Silently fail if Supabase is not available - continue with local delete
+                                        console.warn('Supabase delete failed, continuing with local state:', error);
                                       }
+                                      const newSens = section.sentences.filter(s => s.id !== sen.id);
+                                      await updateSentencesInSection(section.id, newSens);
+                                      const next = new Set(selectedSentences);
+                                      next.delete(sen.id);
+                                      setSelectedSentences(next);
                                     }} onMove={(dir) => moveSentence(section.id, sen.id, dir)} onEditPart={(partIndex, partData) => setEditingPart({ secId: section.id, senId: sen.id, partIndex, partData })} />
                                 ))}
                                 {isEditMode && <Button variant="secondary" size="sm" className="w-full mt-2 border-dashed border-white/20 text-gray-400 hover:text-white hover:border-white/40" onClick={async () => {
                                   const newSentence = { id: `sen-${Date.now()}`, parts: [{ type: 'text', value: '' }], display_order: section.sentences.length };
                                   try {
                                     await supabaseService.createSentence(section.id, newSentence);
-                                    await updateSentencesInSection(section.id, [...section.sentences, newSentence]);
                                   } catch (error) {
-                                    showToast('שגיאה בהוספת משפט');
+                                    // Silently fail if Supabase is not available - continue with local create
+                                    console.warn('Supabase create failed, continuing with local state:', error);
                                   }
+                                  await updateSentencesInSection(section.id, [...section.sentences, newSentence]);
                                 }}><Plus size={14} /> הוסף משפט</Button>}
                             </div>
                         </div>

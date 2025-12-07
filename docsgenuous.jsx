@@ -1280,7 +1280,7 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
     if (isEditMode) {
         return (
             <div className="bg-[#0B0F17] p-3 rounded-lg border border-white/10 space-y-3 group hover:border-blue-500/30 transition-colors">
-                <div className="flex flex-wrap items-center">
+                <div className="flex flex-wrap items-center text-base">
                     {sentence.parts.map((p, i) => {
                         const prevPart = i > 0 ? sentence.parts[i - 1] : null;
                         const hasPrevContent = prevPart && (
@@ -1289,7 +1289,7 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                         
                         return (
                             <React.Fragment key={i}>
-                                {hasPrevContent && <span className="inline-block w-1" aria-hidden="true"> </span>}
+                                {hasPrevContent && <span className="inline-block whitespace-pre" style={{width: '1ch', minWidth: '1ch', textAlign: 'center'}} aria-hidden="true"> </span>}
                                 <div className={editItemClass}>
                                     {p.type === 'text' ? (
                                         <input className="bg-transparent border-none outline-none text-gray-300 placeholder-gray-600 w-full min-w-[60px]" value={p.value} onChange={e=>{

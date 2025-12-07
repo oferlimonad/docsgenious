@@ -984,6 +984,16 @@ const CategoriesPage = ({ data, setData, onSelect, showToast }) => {
   const [editId, setEditId] = useState(null);
   const [editVal, setEditVal] = useState("");
   const [deleteId, setDeleteId] = useState(null);
+  const debounceTimerRef = useRef(null);
+  
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
   
   const addCat = async () => {
     const newCat = { 
@@ -1015,15 +1025,24 @@ const CategoriesPage = ({ data, setData, onSelect, showToast }) => {
     }
   };
   
-  const saveEdit = async () => {
+  const saveEdit = () => {
     if (editId) {
-      try {
-        await supabaseService.updateCategory(editId, { title: editVal });
-        setData(prev => prev.map(c => c.id === editId ? { ...c, title: editVal } : c));
-        setEditId(null);
-      } catch (error) {
-        showToast('שגיאה בעדכון קטגוריה');
+      // Update local state immediately
+      setData(prev => prev.map(c => c.id === editId ? { ...c, title: editVal } : c));
+      
+      // Debounced save to Supabase
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
       }
+      debounceTimerRef.current = setTimeout(async () => {
+        try {
+          await supabaseService.updateCategory(editId, { title: editVal });
+        } catch (error) {
+          console.warn('Supabase update failed, continuing with local state:', error);
+        }
+      }, 700);
+      
+      setEditId(null);
     }
   };
   
@@ -1054,6 +1073,17 @@ const SubcategoriesPage = ({ category, setData, onSelect, showToast }) => {
     const [editId, setEditId] = useState(null);
     const [editVal, setEditVal] = useState("");
     const [deleteId, setDeleteId] = useState(null);
+    const debounceTimerRef = useRef(null);
+    
+    // Cleanup debounce timers on unmount
+    useEffect(() => {
+      return () => {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+        }
+      };
+    }, []);
+    
     const addSub = async () => {
       const newSub = { 
         id: `sub-${Date.now()}`, 
@@ -1083,15 +1113,24 @@ const SubcategoriesPage = ({ category, setData, onSelect, showToast }) => {
       }
     };
     
-    const saveEdit = async () => {
+    const saveEdit = () => {
       if (editId) {
-        try {
-          await supabaseService.updateSubcategory(editId, { title: editVal });
-          setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: c.subcategories.map(s => s.id === editId ? { ...s, title: editVal } : s) } : c));
-          setEditId(null);
-        } catch (error) {
-          showToast('שגיאה בעדכון תת-קטגוריה');
+        // Update local state immediately
+        setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: c.subcategories.map(s => s.id === editId ? { ...s, title: editVal } : s) } : c));
+        
+        // Debounced save to Supabase
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
         }
+        debounceTimerRef.current = setTimeout(async () => {
+          try {
+            await supabaseService.updateSubcategory(editId, { title: editVal });
+          } catch (error) {
+            console.warn('Supabase update failed, continuing with local state:', error);
+          }
+        }, 700);
+        
+        setEditId(null);
       }
     };
     
@@ -1127,7 +1166,50 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
   const [editingSectionTitle, setEditingSectionTitle] = useState("");
   const [deleteSectionId, setDeleteSectionId] = useState(null);
   const [editingPart, setEditingPart] = useState(null);
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const debounceTimerRef = useRef(null);
+  const pendingSaveRef = useRef(null);
+  
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+  
   const updateGlobalData = (updatedSubcategory) => { setData(prev => prev.map(c => c.id === category.id ? { ...c, subcategories: c.subcategories.map(s => s.id === subcategory.id ? updatedSubcategory : s) } : c)); };
+  
+  // Debounced save function for text edits
+  const debouncedSave = (sentenceId, sentence) => {
+    // Clear existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    // Store the pending save
+    pendingSaveRef.current = { sentenceId, sentence };
+    
+    // Set saving status
+    setSaveStatus('saving');
+    
+    // Set new timer
+    debounceTimerRef.current = setTimeout(async () => {
+      if (pendingSaveRef.current) {
+        try {
+          await supabaseService.updateSentence(pendingSaveRef.current.sentenceId, pendingSaveRef.current.sentence);
+          setSaveStatus('saved');
+          // Clear saved status after 2 seconds
+          setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (error) {
+          console.warn('Supabase update failed, continuing with local state:', error);
+          setSaveStatus('idle');
+        }
+        pendingSaveRef.current = null;
+      }
+    }, 700); // 700ms debounce
+  };
   
   const addSection = async () => {
     const newSec = { 
@@ -1162,40 +1244,70 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
     showToast('הקבוצה נמחקה');
   };
   
-  const updateSectionTitle = async (secId, title) => {
-    try {
-      await supabaseService.updateSection(secId, { title });
-    } catch (error) {
-      // Silently fail if Supabase is not available - continue with local update
-      console.warn('Supabase update failed, continuing with local state:', error);
-    }
+  const updateSectionTitle = (secId, title) => {
+    // Update local state immediately
     const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, title } : s) };
     updateGlobalData(updatedSub);
-  };
-  
-  const updateSentencesInSection = async (secId, newSentences) => {
-    try {
-      // Update all sentences in the section
-      for (let i = 0; i < newSentences.length; i++) {
-        const sen = newSentences[i];
-        try {
-          await supabaseService.updateSentence(sen.id, { ...sen, display_order: i });
-        } catch (error) {
-          // Silently fail if Supabase is not available - continue with local update
-          console.warn('Supabase update failed for sentence, continuing with local state:', error);
-        }
-      }
-      const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, sentences: newSentences } : s) };
-      updateGlobalData(updatedSub);
-    } catch (error) {
-      console.error('Error updating sentences in section:', error);
-      // Still update local state even if Supabase fails
-      const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, sentences: newSentences } : s) };
-      updateGlobalData(updatedSub);
+    
+    // Debounced save to Supabase
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
     }
+    setSaveStatus('saving');
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        await supabaseService.updateSection(secId, { title });
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (error) {
+        console.warn('Supabase update failed, continuing with local state:', error);
+        setSaveStatus('idle');
+      }
+    }, 700);
   };
   
-  const handleUpdatePart = async (updatedPart) => {
+  const updateSentencesInSection = (secId, newSentences, immediateSave = false) => {
+    // Update local state immediately
+    const updatedSub = { ...subcategory, sections: subcategory.sections.map(s => s.id === secId ? { ...s, sentences: newSentences } : s) };
+    updateGlobalData(updatedSub);
+    
+    // If immediate save (e.g., reordering), save right away
+    if (immediateSave) {
+      (async () => {
+        try {
+          for (let i = 0; i < newSentences.length; i++) {
+            const sen = newSentences[i];
+            await supabaseService.updateSentence(sen.id, { ...sen, display_order: i });
+          }
+        } catch (error) {
+          console.warn('Supabase update failed, continuing with local state:', error);
+        }
+      })();
+      return;
+    }
+    
+    // Otherwise, debounce saves for text edits
+    // Save all sentences in the section after debounce
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    setSaveStatus('saving');
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        for (let i = 0; i < newSentences.length; i++) {
+          const sen = newSentences[i];
+          await supabaseService.updateSentence(sen.id, { ...sen, display_order: i });
+        }
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (error) {
+        console.warn('Supabase update failed, continuing with local state:', error);
+        setSaveStatus('idle');
+      }
+    }, 700);
+  };
+  
+  const handleUpdatePart = (updatedPart) => {
     if (!editingPart) return;
     const { secId, senId, partIndex } = editingPart;
     const section = subcategory.sections.find(s => s.id === secId);
@@ -1203,7 +1315,7 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
     const newParts = [...sentence.parts];
     newParts[partIndex] = updatedPart;
     const newSentences = section.sentences.map(s => s.id === senId ? { ...s, parts: newParts } : s);
-    await updateSentencesInSection(secId, newSentences);
+    updateSentencesInSection(secId, newSentences);
     setEditingPart(null);
   };
   
@@ -1224,14 +1336,32 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
       // Silently fail if Supabase is not available - continue with local reorder
       console.warn('Supabase reorder failed, continuing with local state:', error);
     }
-    updateSentencesInSection(secId, sentences);
+    // Immediate save for reordering (structural change)
+    updateSentencesInSection(secId, sentences, true);
   };
   const handleCopy = (text) => { navigator.clipboard.writeText(text); showToast('הטקסט הועתק ללוח!'); };
   return (
     <div className="flex flex-col h-full">
         <ConfirmModal isOpen={!!deleteSectionId} title="מחיקת קבוצה" message="האם למחוק את הקבוצה?" onConfirm={handleDeleteSectionConfirm} onCancel={() => setDeleteSectionId(null)} />
         {editingPart && <PartConfigModal isOpen={!!editingPart} part={editingPart.partData} onSave={handleUpdatePart} onCancel={() => setEditingPart(null)} />}
-        <div className="flex justify-between items-center mb-6"><h1 className="text-3xl font-bold text-white tracking-tight">{subcategory.title}</h1><Button size="sm" variant={isEditMode ? "primary" : "secondary"} onClick={() => setIsEditMode(!isEditMode)}>{isEditMode ? <Check size={16}/> : <Settings size={16}/>}<span className="mr-1 hidden sm:inline">{isEditMode ? 'סיום עריכה' : 'מצב עריכה'}</span></Button></div>
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-white tracking-tight">{subcategory.title}</h1>
+            {saveStatus === 'saving' && (
+              <span className="text-xs text-gray-400 flex items-center gap-1">
+                <span className="animate-spin">⏳</span>
+                שומר...
+              </span>
+            )}
+            {saveStatus === 'saved' && (
+              <span className="text-xs text-green-400 flex items-center gap-1">
+                <Check size={12} />
+                נשמר
+              </span>
+            )}
+          </div>
+          <Button size="sm" variant={isEditMode ? "primary" : "secondary"} onClick={() => setIsEditMode(!isEditMode)}>{isEditMode ? <Check size={16}/> : <Settings size={16}/>}<span className="mr-1 hidden sm:inline">{isEditMode ? 'סיום עריכה' : 'מצב עריכה'}</span></Button>
+        </div>
         <div className="flex flex-col lg:flex-row gap-6 relative flex-1">
             <div className="flex-1 bg-[#121620] rounded-2xl border border-white/10 flex flex-col h-[calc(100vh-300px)] min-h-[500px]">
                 {isEditMode && (<div className="p-3 bg-blue-900/20 border-b border-white/10 flex justify-between items-center"><span className="text-sm font-bold text-blue-400">מבנה הדף</span><Button size="sm" icon={Plus} onClick={addSection}>הוסף קבוצה</Button></div>)}
@@ -1245,16 +1375,14 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
                             </div>
                             <div className="p-3 space-y-2">
                                 {section.sentences.map((sen, index) => (
-                                    <SentenceRow key={sen.id} sentence={sen} index={index} totalCount={section.sentences.length} isEditMode={isEditMode} isSelected={selectedSentences.has(sen.id)} onToggle={() => { const next = new Set(selectedSentences); next.has(sen.id) ? next.delete(sen.id) : next.add(sen.id); setSelectedSentences(next); }} userValues={userValues} onValueChange={(k, v) => setUserValues(prev => ({ ...prev, [k]: v }))}                                     onUpdateParts={async (parts) => { 
+                                    <SentenceRow key={sen.id} sentence={sen} index={index} totalCount={section.sentences.length} isEditMode={isEditMode} isSelected={selectedSentences.has(sen.id)} onToggle={() => { const next = new Set(selectedSentences); next.has(sen.id) ? next.delete(sen.id) : next.add(sen.id); setSelectedSentences(next); }} userValues={userValues} onValueChange={(k, v) => setUserValues(prev => ({ ...prev, [k]: v }))}                                     onUpdateParts={(parts) => { 
+                                      // Update local state immediately for instant UI response
                                       const updatedSentence = { ...sen, parts };
-                                      try {
-                                        await supabaseService.updateSentence(sen.id, updatedSentence);
-                                      } catch (error) {
-                                        // Silently fail if Supabase is not available - continue with local update
-                                        console.warn('Supabase update failed, continuing with local state:', error);
-                                      }
                                       const newSens = section.sentences.map(s => s.id === sen.id ? updatedSentence : s);
-                                      await updateSentencesInSection(section.id, newSens);
+                                      updateSentencesInSection(section.id, newSens);
+                                      
+                                      // Debounced save to Supabase
+                                      debouncedSave(sen.id, updatedSentence);
                                     }} onDelete={async () => { 
                                       try {
                                         await supabaseService.deleteSentence(sen.id);
@@ -1263,7 +1391,7 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
                                         console.warn('Supabase delete failed, continuing with local state:', error);
                                       }
                                       const newSens = section.sentences.filter(s => s.id !== sen.id);
-                                      await updateSentencesInSection(section.id, newSens);
+                                      updateSentencesInSection(section.id, newSens);
                                       const next = new Set(selectedSentences);
                                       next.delete(sen.id);
                                       setSelectedSentences(next);
@@ -1277,7 +1405,7 @@ const BuilderPage = ({ category, subcategory, setData, showToast }) => {
                                     // Silently fail if Supabase is not available - continue with local create
                                     console.warn('Supabase create failed, continuing with local state:', error);
                                   }
-                                  await updateSentencesInSection(section.id, [...section.sentences, newSentence]);
+                                  updateSentencesInSection(section.id, [...section.sentences, newSentence]);
                                 }}><Plus size={14} /> הוסף משפט</Button>}
                             </div>
                         </div>
@@ -1315,7 +1443,7 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                             <React.Fragment key={i}>
                                 {hasPrevContent && <span className="inline-block whitespace-pre" style={{width: '1ch', minWidth: '1ch', textAlign: 'center'}} aria-hidden="true"> </span>}
                                 <div className={editItemClass}>
-                                    {p.type === 'text' ? (
+                            {p.type === 'text' ? (
                                         <input className="bg-transparent border-none outline-none text-gray-300 placeholder-gray-600 w-full min-w-[60px]" value={p.value} onChange={e=>{
                                             // Normalize spaces: collapse multiple spaces to single, but allow user to type normally
                                             // Only normalize when there are 2+ consecutive spaces
@@ -1324,15 +1452,15 @@ const SentenceRow = ({ sentence, index, totalCount, isEditMode, isSelected, onTo
                                             n[i].value=normalized;
                                             onUpdateParts(n);
                                         }} placeholder="טקסט" />
-                                    ) : (
-                                        <div className="flex items-center gap-2 cursor-pointer w-full" onClick={() => onEditPart(i, p)}>
-                                            <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider bg-blue-500/10 px-1.5 py-0.5 rounded">{p.type === 'input' ? 'שדה' : 'בחירה'}</span>
-                                            <span className="text-gray-200 truncate max-w-[100px]">{p.label || 'ללא תווית'}</span>
-                                            <Settings size={12} className="text-gray-500 ml-auto group-hover/item:text-blue-400"/>
-                                        </div>
-                                    )}
-                                    <button onClick={()=>onUpdateParts(sentence.parts.filter((_,idx)=>idx!==i))} className="absolute -top-2 -left-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity shadow-lg scale-75 hover:scale-100"><X size={12}/></button>
+                            ) : (
+                                <div className="flex items-center gap-2 cursor-pointer w-full" onClick={() => onEditPart(i, p)}>
+                                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider bg-blue-500/10 px-1.5 py-0.5 rounded">{p.type === 'input' ? 'שדה' : 'בחירה'}</span>
+                                    <span className="text-gray-200 truncate max-w-[100px]">{p.label || 'ללא תווית'}</span>
+                                    <Settings size={12} className="text-gray-500 ml-auto group-hover/item:text-blue-400"/>
                                 </div>
+                            )}
+                            <button onClick={()=>onUpdateParts(sentence.parts.filter((_,idx)=>idx!==i))} className="absolute -top-2 -left-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity shadow-lg scale-75 hover:scale-100"><X size={12}/></button>
+                        </div>
                             </React.Fragment>
                         );
                     })}
